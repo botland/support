@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ownedge.ai/schemas/diagnostic-bundle.v1.json",
+  "title": "DiagnosticBundle",
+  "type": "object",
+  "required": [
+    "bundle_version",
+    "appliance_id",
+    "submitted_at",
+    "software",
+    "topology",
+    "health",
+    "events",
+    "deployments_summary",
+    "nodes_summary"
+  ],
+  "properties": {
+    "bundle_version": { "type": "integer", "const": 1 },
+    "appliance_id": { "type": "string", "minLength": 1 },
+    "submitted_at": { "type": "string", "format": "date-time" },
+    "software": {
+      "type": "object",
+      "required": ["console_version", "controller_version", "support_client_version"],
+      "properties": {
+        "console_version": { "type": "string" },
+        "controller_version": { "type": "string" },
+        "support_client_version": { "type": "string" }
+      }
+    },
+    "topology": {
+      "type": "object",
+      "required": ["serving_mode", "role", "node_count", "local_node_id"],
+      "properties": {
+        "serving_mode": { "type": "string" },
+        "role": { "type": "string" },
+        "node_count": { "type": "integer", "minimum": 0 },
+        "local_node_id": { "type": "string" }
+      }
+    },
+    "health": { "type": "object" },
+    "events": { "type": "array" },
+    "deployments_summary": { "type": "array" },
+    "nodes_summary": { "type": "array" },
+    "user_note": { "type": "string" },
+    "attachments": { "type": "object" }
+  },
+  "additionalProperties": false
+}

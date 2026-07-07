@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ownedge.ai/schemas/diagnosis-result.v1.json",
+  "title": "DiagnosisResult",
+  "type": "object",
+  "required": ["verdict", "summary", "confidence", "recommended_actions"],
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["likely_bug", "operator_actionable", "insufficient_data", "unknown"]
+    },
+    "summary": { "type": "string" },
+    "confidence": { "type": "string", "enum": ["low", "medium", "high"] },
+    "recommended_actions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "engineering_notes": { "type": "string" },
+    "evidence": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": false
+}

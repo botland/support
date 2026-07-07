@@ -1,0 +1,17 @@
+services:
+  support:
+    build: .
+    ports:
+      - "${SUPPORT_PORT:-8090}:8090"
+    environment:
+      - SUPPORT_PORT=8090
+      - SUPPORT_DB_PATH=/data/support.db
+      - SUPPORT_FREE_FOR_ALL=true
+      - AI_CLI_ADAPTER=${AI_CLI_ADAPTER:-stub}
+      - AI_CLI_COMMAND=${AI_CLI_COMMAND:-}
+      - DIAGNOSIS_MAX_RETRIES=${DIAGNOSIS_MAX_RETRIES:-2}
+    volumes:
+      - support_data:/data
+
+volumes:
+  support_data:

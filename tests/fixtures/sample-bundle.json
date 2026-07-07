@@ -1,0 +1,24 @@
+{
+  "bundle_version": 1,
+  "appliance_id": "forge-demo-001",
+  "submitted_at": "2026-07-07T12:00:00Z",
+  "software": {
+    "console_version": "dev",
+    "controller_version": "dev",
+    "support_client_version": "1.0.0"
+  },
+  "topology": {
+    "serving_mode": "distributed",
+    "role": "coordinator",
+    "node_count": 3,
+    "local_node_id": "node-1"
+  },
+  "health": {
+    "state": "DEGRADED",
+    "last_error": "reconcile failed",
+    "actual": { "exit_code": 1, "log_snippet": "process exited" }
+  },
+  "events": [],
+  "deployments_summary": [],
+  "nodes_summary": []
+}

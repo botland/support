@@ -1,0 +1,8 @@
+# Release pin map for code-context checkouts. Unknown SHAs fall back to main.
+releases:
+  inferedge-phase1:
+    main: main
+    dev: main
+  appliance-console:
+    main: main
+    dev: main
