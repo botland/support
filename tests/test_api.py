@@ -56,7 +56,13 @@ async def test_entitlement_free_tier(client):
 
 
 @pytest.mark.asyncio
-async def test_create_and_poll_ticket(client):
+async def test_create_and_poll_ticket(client, monkeypatch):
+    # API integration uses the stub AI adapter; isolate code context (strict SHA/tag).
+    from src.jobs import diagnose as diagnose_job
+
+    monkeypatch.setattr(diagnose_job, "prepare_code_roots", lambda ticket_id, bundle: [])
+    monkeypatch.setattr(diagnose_job, "release_code_roots", lambda ticket_id: None)
+
     res = await client.post("/v1/tickets", json=SAMPLE_BUNDLE)
     assert res.status_code == 202
     ticket_id = res.json()["ticket_id"]
@@ -75,6 +81,8 @@ async def test_create_and_poll_ticket(client):
                 "unknown",
             )
             return
+        if body["status"] == "failed":
+            pytest.fail(f"ticket failed: {body.get('error')}")
         await asyncio.sleep(0.05)
 
     pytest.fail("ticket did not complete in time")

@@ -22,6 +22,7 @@ class StubAICliAdapter:
         bundle: DiagnosticBundle,
         code_roots: list[Path],
         prompt_template: str,
+        ticket_id: str = "",
     ) -> DiagnosisResult:
         state = bundle.health.get("state", "UNKNOWN")
         last_error = (bundle.health.get("last_error") or "").lower()
@@ -58,7 +59,7 @@ class StubAICliAdapter:
             )
 
         if state == "DEGRADED" and exit_code not in (None, 0):
-            code_hint = _code_hint(code_roots, "inferedge-phase1/controller/reconciler.py")
+            code_hint = _code_hint(code_roots, "controller/reconciler.py")
             return DiagnosisResult(
                 verdict="likely_bug",
                 summary="A runtime process exited unexpectedly while the appliance was reconciling. This pattern often indicates a product defect when configuration appears valid.",

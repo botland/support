@@ -13,4 +13,5 @@ class AICliAdapter(Protocol):
         bundle: DiagnosticBundle,
         code_roots: list[Path],
         prompt_template: str,
+        ticket_id: str = "",
     ) -> DiagnosisResult: ...

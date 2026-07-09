@@ -7,11 +7,36 @@ services:
       - SUPPORT_PORT=8090
       - SUPPORT_DB_PATH=/data/support.db
       - SUPPORT_FREE_FOR_ALL=true
+      - HOME=/root
+      - PATH=/root/.grok/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      # AI CLI: stub by default; set AI_CLI_ADAPTER=cli + mount ~/.grok for Grok.
       - AI_CLI_ADAPTER=${AI_CLI_ADAPTER:-stub}
-      - AI_CLI_COMMAND=${AI_CLI_COMMAND:-}
+      - AI_CLI_COMMAND=${AI_CLI_COMMAND:-/app/scripts/ai_diagnose_grok.sh}
+      - AI_CLI_USE_PROMPT_FILE=${AI_CLI_USE_PROMPT_FILE:-true}
+      - AI_CLI_TIMEOUT_SEC=${AI_CLI_TIMEOUT_SEC:-300}
+      - AI_CLI_CWD=${AI_CLI_CWD:-code_root}
+      - AI_CLI_PRIMARY_ROOT=${AI_CLI_PRIMARY_ROOT:-backend}
+      - AI_GROK_MAX_TURNS=${AI_GROK_MAX_TURNS:-40}
+      - GROK_BIN=${GROK_BIN:-grok}
+      - DIAGNOSIS_TIMEOUT_SEC=${DIAGNOSIS_TIMEOUT_SEC:-360}
       - DIAGNOSIS_MAX_RETRIES=${DIAGNOSIS_MAX_RETRIES:-2}
+      - SUPPORT_KEEP_TICKET_WORKTREES=${SUPPORT_KEEP_TICKET_WORKTREES:-false}
+      - CODE_ROOT_APPLIANCE_CONSOLE=${CODE_ROOT_APPLIANCE_CONSOLE:-}
+      - CODE_ROOT_APPLIANCE_BACKEND=${CODE_ROOT_APPLIANCE_BACKEND:-}
+      - CODE_WORKTREE_ROOT=${CODE_WORKTREE_ROOT:-/data/code_worktrees}
+      - SUPPORT_ALERT_EMAIL=${SUPPORT_ALERT_EMAIL:-support@ownedge.ai}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-noreply@ownedge.ai}
     volumes:
       - support_data:/data
+      # Grok auth + binary (login on host: grok login → ~/.grok/auth.json)
+      - ${GROK_HOME:-${HOME}/.grok}:/root/.grok
+      # Mount product source clones when using real code context (writable .git for worktrees).
+      # - ${CODE_ROOT_APPLIANCE_CONSOLE}:${CODE_ROOT_APPLIANCE_CONSOLE}
+      # - ${CODE_ROOT_APPLIANCE_BACKEND}:${CODE_ROOT_APPLIANCE_BACKEND}
 
 volumes:
   support_data:

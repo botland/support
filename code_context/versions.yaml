@@ -1,8 +1,6 @@
-# Release pin map for code-context checkouts. Unknown SHAs fall back to main.
+# Optional release aliases only. Keys map product labels → git SHA or tag.
+# Do not map dev/unknown/mock — those are rejected by the code context manager.
+# Prefer stamping the real git SHA or tag into appliance builds.
 releases:
-  inferedge-phase1:
-    main: main
-    dev: main
-  appliance-console:
-    main: main
-    dev: main
+  appliance-console: {}
+  appliance-backend: {}

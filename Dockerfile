@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+RUN apt-get update && apt-get install -y --no-install-recommends curl git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -14,7 +14,20 @@ COPY prompts ./prompts
 COPY scripts ./scripts
 COPY src ./src
 
+RUN chmod +x /app/scripts/*.sh || true
+
+# Grok CLI is expected via mounted host install (~/.grok/bin on PATH).
+# Auth/credentials: mount host ~/.grok → /root/.grok (see compose.yml).
+ENV HOME=/root
+ENV PATH="/root/.grok/bin:${PATH}"
 ENV SUPPORT_PORT=8090
+# Default production CLI wiring (override freely to switch tools).
+ENV AI_CLI_ADAPTER=stub
+ENV AI_CLI_USE_PROMPT_FILE=true
+ENV AI_CLI_CWD=code_root
+ENV AI_CLI_PRIMARY_ROOT=backend
+ENV AI_CLI_COMMAND="/app/scripts/ai_diagnose_grok.sh"
+
 EXPOSE 8090
 
 CMD ["sh", "-c", "uvicorn src.main:app --host 0.0.0.0 --port ${SUPPORT_PORT}"]
