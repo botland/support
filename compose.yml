@@ -34,9 +34,10 @@ services:
       - support_data:/data
       # Grok auth + binary (login on host: grok login → ~/.grok/auth.json)
       - ${GROK_HOME:-${HOME}/.grok}:/root/.grok
-      # Mount product source clones when using real code context (writable .git for worktrees).
-      # - ${CODE_ROOT_APPLIANCE_CONSOLE}:${CODE_ROOT_APPLIANCE_CONSOLE}
-      # - ${CODE_ROOT_APPLIANCE_BACKEND}:${CODE_ROOT_APPLIANCE_BACKEND}
+      # Product source clones (required for code context). Paths must match CODE_ROOT_* in .env.
+      # .git must be writable inside the container for git worktree registration.
+      - ${CODE_ROOT_APPLIANCE_CONSOLE}:${CODE_ROOT_APPLIANCE_CONSOLE}
+      - ${CODE_ROOT_APPLIANCE_BACKEND}:${CODE_ROOT_APPLIANCE_BACKEND}
 
 volumes:
   support_data:
