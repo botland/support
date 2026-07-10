@@ -30,4 +30,4 @@ ENV AI_CLI_COMMAND="/app/scripts/ai_diagnose_grok.sh"
 
 EXPOSE 8090
 
-CMD ["sh", "-c", "uvicorn src.main:app --host 0.0.0.0 --port ${SUPPORT_PORT}"]
+CMD ["/app/scripts/docker-entrypoint.sh"]

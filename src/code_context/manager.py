@@ -93,9 +93,40 @@ def _ticket_repo_path(ticket_id: str, repo_key: str) -> Path:
     return ticket_dir(ticket_id) / repo_key
 
 
+def _safe_directory_flags(source: Path) -> list[str]:
+    """Trust mounted host clones when git runs as a different user (e.g. Docker root)."""
+    flags: list[str] = []
+    seen: set[str] = set()
+
+    def add(path: Path) -> None:
+        resolved = str(path.resolve())
+        if resolved not in seen:
+            seen.add(resolved)
+            flags.extend(["-c", f"safe.directory={resolved}"])
+
+    add(source)
+    git_meta = source / ".git"
+    if git_meta.is_file():
+        line = git_meta.read_text(encoding="utf-8", errors="replace").strip()
+        if line.startswith("gitdir:"):
+            gitdir = Path(line.split(":", 1)[1].strip())
+            if not gitdir.is_absolute():
+                gitdir = (source / gitdir).resolve()
+            add(gitdir)
+            # Submodule object DB lives under the parent repo's .git/modules/…
+            cursor = gitdir
+            while cursor.parent != cursor:
+                if cursor.name == "modules":
+                    add(cursor.parent.parent)
+                    break
+                cursor = cursor.parent
+
+    return flags
+
+
 def _run_git(source: Path, *args: str, check: bool = False) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", "-C", str(source), *args],
+        ["git", *_safe_directory_flags(source), "-C", str(source), *args],
         check=check,
         capture_output=True,
         text=True,

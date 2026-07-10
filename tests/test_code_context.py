@@ -11,6 +11,7 @@ from src.code_context.manager import (
     REPO_BACKEND,
     REPO_CONSOLE,
     _resolve_ref,
+    _safe_directory_flags,
     prepare_code_roots,
     release_code_roots,
 )
@@ -151,6 +152,21 @@ def test_prepare_tag_checkout(tmp_path, monkeypatch, sample_bundle):
     assert _git(roots[0], "rev-parse", "HEAD") == sha_console
     assert _git(roots[1], "rev-parse", "HEAD") == sha_backend
     release_code_roots("ticket-tag")
+
+
+def test_safe_directory_flags_include_submodule_parent(tmp_path):
+    submodule = tmp_path / "console"
+    submodule.mkdir()
+    parent = tmp_path / "monorepo"
+    parent.mkdir()
+    (parent / ".git" / "modules" / "console").mkdir(parents=True)
+    (submodule / ".git").write_text("gitdir: ../monorepo/.git/modules/console\n", encoding="utf-8")
+
+    flags = _safe_directory_flags(submodule)
+    joined = " ".join(flags)
+    assert f"safe.directory={submodule.resolve()}" in joined
+    assert f"safe.directory={(parent / '.git' / 'modules' / 'console').resolve()}" in joined
+    assert f"safe.directory={parent.resolve()}" in joined
 
 
 def test_missing_source_raises(tmp_path, monkeypatch, sample_bundle):

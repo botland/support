@@ -69,6 +69,8 @@ Appliance builds stamp git SHAs via `APPLIANCE_PROD` + `./scripts/compose.sh` (s
 
 The support service has **no matching prod/dev mode** — it only needs reachable commits in `CODE_ROOT_*` clones. Prefer `git fetch --all --tags` (or fetch by SHA) on those clones so dev SHAs from any branch resolve.
 
+**Docker:** mount `CODE_ROOT_*` host paths into the container (see `compose.yml`). Git 2.35+ rejects repos owned by a different UID unless marked `safe.directory` — the image entrypoint and `code_context.manager` handle this automatically when `CODE_ROOT_*` is set.
+
 ## API
 
 | Endpoint | Description |
