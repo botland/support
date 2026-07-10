@@ -17,7 +17,7 @@ from .. import tickets
 
 logger = logging.getLogger(__name__)
 
-DIAGNOSIS_TIMEOUT_SEC = int(os.environ.get("DIAGNOSIS_TIMEOUT_SEC", "180"))
+DIAGNOSIS_TIMEOUT_SEC = int(os.environ.get("DIAGNOSIS_TIMEOUT_SEC", "360"))
 DIAGNOSIS_MAX_RETRIES = int(os.environ.get("DIAGNOSIS_MAX_RETRIES", "2"))
 DIAGNOSIS_RETRY_BACKOFF_SEC = float(os.environ.get("DIAGNOSIS_RETRY_BACKOFF_SEC", "2"))
 

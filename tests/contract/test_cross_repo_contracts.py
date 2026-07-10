@@ -26,6 +26,12 @@ def test_log_tail_limits_contract():
     assert limits["maxBytes"] == 65536
 
 
+def test_support_polling_limits_contract():
+    limits = load_contract("support-polling-limits.json")
+    assert limits["diagnosis_timeout_sec"] == 360
+    assert limits["diagnosis_max_retries"] == 2
+
+
 def test_diagnostic_bundle_golden_validates():
     from src.schemas import DiagnosticBundle
 
