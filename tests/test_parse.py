@@ -37,3 +37,22 @@ def test_parse_fenced_json():
 def test_parse_invalid_raises():
     with pytest.raises(DiagnosisParseError):
         parse_diagnosis_result("not json at all")
+
+
+def test_parse_tolerates_trailing_garbage():
+    raw = (
+        '{"verdict":"unknown","summary":"s","confidence":"low",'
+        '"recommended_actions":[]} trailing prose'
+    )
+    result = parse_diagnosis_result(raw)
+    assert result.verdict == "unknown"
+
+
+def test_parse_grok_envelope_text():
+    raw = (
+        '{"text":"{\\"verdict\\":\\"likely_bug\\",\\"summary\\":\\"x\\",'
+        '\\"confidence\\":\\"high\\",\\"recommended_actions\\":[\\"a\\"]}",'
+        '"stopReason":"end"}'
+    )
+    result = parse_diagnosis_result(raw)
+    assert result.verdict == "likely_bug"

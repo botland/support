@@ -13,25 +13,44 @@ class DiagnosisParseError(ValueError):
 _FENCE_RE = re.compile(r"```(?:json)?\s*([\s\S]*?)```", re.IGNORECASE)
 
 
-def _extract_json_blob(text: str) -> str:
+def _loads_first_object(text: str) -> object:
+    """Parse the first JSON value; tolerate trailing garbage."""
     stripped = text.strip()
     if not stripped:
         raise DiagnosisParseError("CLI produced empty output")
 
     fence = _FENCE_RE.search(stripped)
     if fence:
-        return fence.group(1).strip()
+        stripped = fence.group(1).strip()
 
-    start = stripped.find("{")
-    end = stripped.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        raise DiagnosisParseError("No JSON object found in CLI output")
-    return stripped[start : end + 1]
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        pass
+
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(stripped):
+        if char not in "{[":
+            continue
+        try:
+            obj, _end = decoder.raw_decode(stripped, index)
+            return obj
+        except json.JSONDecodeError:
+            continue
+    raise DiagnosisParseError("No JSON object found in CLI output")
 
 
 def parse_diagnosis_result(stdout: str) -> DiagnosisResult:
     try:
-        payload = json.loads(_extract_json_blob(stdout))
+        payload = _loads_first_object(stdout)
     except json.JSONDecodeError as exc:
         raise DiagnosisParseError(f"Invalid JSON from CLI: {exc}") from exc
+    if isinstance(payload, dict) and "verdict" not in payload and isinstance(payload.get("text"), str):
+        # Grok headless envelope slipped through the wrapper
+        try:
+            payload = _loads_first_object(payload["text"])
+        except DiagnosisParseError:
+            pass
+    if not isinstance(payload, dict):
+        raise DiagnosisParseError("CLI JSON is not an object")
     return DiagnosisResult.model_validate(payload)
