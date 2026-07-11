@@ -4,3 +4,6 @@ __pycache__/
 .pytest_cache/
 *.db
 .env
+
+# Runtime data (DB, old host-side code worktrees). Diagnosis worktrees now use Docker.
+data/
