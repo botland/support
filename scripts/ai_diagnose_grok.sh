@@ -58,6 +58,9 @@ if [[ ! -s "$RAW_FILE" ]]; then
 fi
 
 # Extract DiagnosisResult robustly (envelope, fences, trailing prose).
+# Grok often emits intermediate DiagnosisResult JSON objects during multi-turn
+# work, concatenated in envelope.text. Prefer structuredOutput (final schema
+# object), else the *last* DiagnosisResult-shaped object in text.
 python3 - "$RAW_FILE" <<'PY'
 import json
 import re
@@ -70,6 +73,28 @@ if not raw:
     raise SystemExit("wrapper: empty Grok output file")
 
 fence = re.compile(r"```(?:json)?\s*([\s\S]*?)```", re.IGNORECASE)
+REQUIRED = ("verdict", "summary", "confidence", "recommended_actions")
+
+
+def iter_json_values(s: str):
+    """Yield successive JSON values (supports concatenated objects)."""
+    s = s.strip()
+    if not s:
+        return
+    dec = json.JSONDecoder()
+    i = 0
+    n = len(s)
+    while i < n:
+        while i < n and s[i] not in "{[":
+            i += 1
+        if i >= n:
+            break
+        try:
+            obj, end = dec.raw_decode(s, i)
+            yield obj
+            i = end
+        except json.JSONDecodeError:
+            i += 1
 
 
 def loads_first_object(s: str):
@@ -79,35 +104,47 @@ def loads_first_object(s: str):
         return json.loads(s)
     except json.JSONDecodeError:
         pass
-    dec = json.JSONDecoder()
-    for i, ch in enumerate(s):
-        if ch not in "{[":
-            continue
-        try:
-            obj, _end = dec.raw_decode(s, i)
-            return obj
-        except json.JSONDecodeError:
-            continue
+    for obj in iter_json_values(s):
+        return obj
     m = fence.search(s)
     if m:
         return loads_first_object(m.group(1))
     raise ValueError("no JSON object found")
 
 
+def is_diagnosis(obj) -> bool:
+    return isinstance(obj, dict) and all(k in obj for k in REQUIRED)
+
+
+def diagnoses_from_text(text) -> list:
+    if isinstance(text, dict) and is_diagnosis(text):
+        return [text]
+    if not isinstance(text, str):
+        return []
+    found = [obj for obj in iter_json_values(text) if is_diagnosis(obj)]
+    if found:
+        return found
+    m = fence.search(text)
+    if m:
+        return [obj for obj in iter_json_values(m.group(1)) if is_diagnosis(obj)]
+    return []
+
+
 def as_diagnosis(obj):
     if not isinstance(obj, dict):
         return None
-    # Grok headless envelope: { text, stopReason, sessionId, ... }
-    if "verdict" not in obj and "text" in obj:
-        text = obj["text"]
-        if isinstance(text, (dict, list)):
-            cand = text
-        else:
-            cand = loads_first_object(str(text))
-        if isinstance(cand, dict) and "verdict" in cand:
-            return cand
-    if "verdict" in obj:
+    # Grok headless: final schema-validated object (preferred)
+    so = obj.get("structuredOutput")
+    if is_diagnosis(so):
+        return so
+    # Already a DiagnosisResult
+    if is_diagnosis(obj):
         return obj
+    # Envelope text may contain intermediate + final JSON objects
+    if "text" in obj:
+        cands = diagnoses_from_text(obj["text"])
+        if cands:
+            return cands[-1]
     return None
 
 
@@ -118,19 +155,17 @@ except Exception as exc:
 
 payload = as_diagnosis(outer)
 if payload is None and isinstance(outer, dict):
-    # nested result field used by some formats
-    for key in ("result", "data", "output"):
+    for key in ("result", "data", "output", "structuredOutput"):
         if key in outer:
-            payload = as_diagnosis(outer[key])
+            payload = as_diagnosis(outer[key]) if key != "structuredOutput" else (
+                outer[key] if is_diagnosis(outer[key]) else None
+            )
             if payload:
                 break
 if payload is None:
-    # last resort: scan whole raw string for a DiagnosisResult-shaped object
-    try:
-        cand = loads_first_object(raw)
-        payload = as_diagnosis(cand)
-    except Exception:
-        payload = None
+    # last resort: scan whole raw string for DiagnosisResult-shaped objects
+    cands = diagnoses_from_text(raw)
+    payload = cands[-1] if cands else None
 
 if not isinstance(payload, dict) or "verdict" not in payload:
     raise SystemExit(
@@ -138,8 +173,7 @@ if not isinstance(payload, dict) or "verdict" not in payload:
         f"(keys={list(outer.keys()) if isinstance(outer, dict) else type(outer)})"
     )
 
-required = ("verdict", "summary", "confidence", "recommended_actions")
-missing = [k for k in required if k not in payload]
+missing = [k for k in REQUIRED if k not in payload]
 if missing:
     raise SystemExit(f"wrapper: DiagnosisResult missing keys: {missing}")
 

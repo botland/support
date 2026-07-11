@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from src.ai.parse import DiagnosisParseError, parse_diagnosis_result
@@ -56,3 +58,43 @@ def test_parse_grok_envelope_text():
     )
     result = parse_diagnosis_result(raw)
     assert result.verdict == "likely_bug"
+
+
+def test_parse_grok_prefers_structured_output_over_intermediate_text():
+    """Grok multi-turn: text concatenates placeholders; structuredOutput is final."""
+    intermediate = (
+        '{"verdict":"insufficient_data","summary":"Investigating…",'
+        '"confidence":"low","recommended_actions":["reading"]}'
+    )
+    final = {
+        "verdict": "operator_actionable",
+        "summary": "GPU OOM on 8GB card",
+        "confidence": "high",
+        "recommended_actions": ["use GPTQ", "lower context"],
+    }
+    raw = json.dumps(
+        {
+            "text": intermediate + json.dumps(final),
+            "stopReason": "EndTurn",
+            "structuredOutput": final,
+        }
+    )
+    result = parse_diagnosis_result(raw)
+    assert result.verdict == "operator_actionable"
+    assert result.confidence == "high"
+    assert "GPTQ" in result.recommended_actions[0]
+
+
+def test_parse_grok_last_concatenated_text_when_no_structured_output():
+    first = (
+        '{"verdict":"insufficient_data","summary":"start",'
+        '"confidence":"low","recommended_actions":["a"]}'
+    )
+    last = (
+        '{"verdict":"likely_bug","summary":"final",'
+        '"confidence":"medium","recommended_actions":["b"]}'
+    )
+    raw = json.dumps({"text": first + last, "stopReason": "EndTurn"})
+    result = parse_diagnosis_result(raw)
+    assert result.verdict == "likely_bug"
+    assert result.summary == "final"
