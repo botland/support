@@ -84,20 +84,25 @@ Public multi-turn guide via:
 
 ## 1. Billing and entitlement (blocking for production entitlement gate)
 
+**Ownership (decided):** shared Postgres; **nocloud owns** schema, migrations, and all population (checkout / Stripe webhooks / grants). **appliance-support is read-only** (`BILLING_ADAPTER=postgres`). Canonical design: [`nocloud/docs/entitlement-database.md`](../docs/entitlement-database.md).
+
 **Product packaging (decided):**
 
 | Service key | Level | Scope | Commercial |
 |-------------|-------|--------|------------|
-| `aiAssistedSupport` | **L2** — AI-assisted diagnostics (this service) | Per-customer | Paid product; **$0 for now** (charge later) |
-| `prioritySupport` (name may change) | **L3** — human/priority support | Per-customer | Paid product; **$0 for now** (charge later) |
+| `aiAssistedSupport` | **L2** — AI-assisted diagnostics (this service) | Per-customer | Paid product; **€0 for now** (charge later) |
+| `prioritySupport` (name may change) | **L3** — human/priority support | Per-customer | Paid product; **€0 for now** (charge later) |
 
-L1 public product guide (landing chat) remains free and unentitled.
+L1 public product guide (landing chat) remains free and unentitled. Ticket gate uses **L2 only**.
 
-| Item | Notes |
-|------|--------|
-| Production wiring | Point support at billing DB (`BILLING_ADAPTER=postgres`, `DATABASE_URL`); document in compose/ops. Default is still `stub`. Gate tickets on `aiAssistedSupport` only (not L3). |
-| Subscription lifecycle | Both L2 and L3 are per-customer services. Today `aiAssistedSupport` is still **internal-only** in nocloud (`INTERNAL_SERVICE_KEYS`); storefront surfaces L3-style priority support. Need: provision L2 (and L3) as free-of-charge paid SKUs, customer-facing enablement path, and clear entitled/not entitled UX on the appliance Support page. Stripe/metadata can already write rows when the service key is present. |
-| Schema / ownership | Schema exists in nocloud (`customers`, `appliances`, `service_subscriptions`). TBD: shared Postgres vs read replica for support service. |
+| Item | Notes | Owner |
+|------|--------|--------|
+| Schema + migrations | `nocloud/db/migrations/`, `scripts/migrate-db.mjs` — do **not** add entitlement DDL here | nocloud |
+| `appliance_id` creation | Serial `NC-{SLUG}-…` at cart resolve; written to `appliances` only after full hardware payment | nocloud |
+| L2/L3 population | Grant €0 active rows at provision (recommended) or via catalog; Stripe sync already works for keyed subs | nocloud |
+| Production wiring | Support: `BILLING_ADAPTER=postgres` + same `DATABASE_URL` (or read replica). Default still `stub`. | support ops |
+| Console UX | Entitled / not entitled for L2 on Support page | appliance-console |
+| Shared vs replica | Same schema either way; replica optional for isolation | ops |
 
 ---
 
@@ -204,7 +209,8 @@ Code is in place. Remaining:
 1. **Ship guide** — commit storefront side + prod Grok smoke + optional token  
 2. **Ops smoke (diagnose):** stamped appliance → worktrees → `AI_CLI_ADAPTER=cli` (Grok) → diagnosis  
 3. **Security P0:** ticket poll binding + durable rate limiter  
-4. **Billing prod path:** postgres adapter + provision L2 `aiAssistedSupport` (and L3) as $0 paid per-customer SKUs  
+4. **Billing prod path (nocloud):** grant L2/L3 €0 rows next to checkout provision; **(support ops):** `BILLING_ADAPTER=postgres` + `DATABASE_URL`  
+
 5. **Deploy + TLS + retention purge**  
 6. **Multi-node diagnostics (§5b)** + `controller_logs_tail`  
 7. **E2E script + diagnostics polish (§5)**  
@@ -213,9 +219,10 @@ Code is in place. Remaining:
 
 ## Open decisions
 
-- Billing DB access for support (shared vs replica)
-- How customers enable L2/L3 while free (auto-grant on hardware delivery vs opt-in catalog vs admin flag) — charge later without re-keying
+- Shared DB direct vs read replica for support (schema still nocloud-owned)
+- How customers enable L2/L3 while free (**recommend auto-grant L2 on hardware provision**; L3 opt-in or bundled) — charge later without re-keying
 - Final public name for L3 (`prioritySupport` provisional)
+- Free-grant rows: nullable `stripe_subscription_id` only vs always create €0 Stripe sub
 - Ticket poll must verify `appliance_id`? (**recommend yes**)
 - Full bundle retention vs hashed summary after diagnosis
 - Default IP masking policy

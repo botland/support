@@ -391,9 +391,9 @@ Separate from diagnostic tickets: a **public multi-turn product guide** for the 
 
 ## Open decisions
 
-- Billing/subscription DB schema, ownership, and sync mechanism (real-time API vs replicated read replica).
+- Shared entitlement Postgres: **schema + population owned by nocloud** (see `nocloud/docs/entitlement-database.md`). Support is read-only via `BILLING_ADAPTER=postgres`. Still open: direct shared DB vs read replica.
+- L2 (`aiAssistedSupport`) / L3 (`prioritySupport`) are per-customer paid SKUs at €0 for now; grant moment (auto on hardware provision vs catalog) decided in nocloud, not here.
 - Whether ticket polling should also verify `appliance_id` match.
 - Full bundle retention vs hashed summary after diagnosis.
 - IP masking default (keep RFC1918 vs redact all).
-- First concrete AI CLI adapter target.
 - Optional future: authenticated diagnostics endpoint if a global controller read-auth policy is adopted.
