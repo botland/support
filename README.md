@@ -79,6 +79,33 @@ The support service has **no matching prod/dev mode** — it only needs reachabl
 | `GET /v1/entitlement/{appliance_id}` | Subscription preflight |
 | `POST /v1/tickets` | Submit diagnostic bundle |
 | `GET /v1/tickets/{id}` | Poll ticket status / diagnosis |
+| `POST /v1/guide/sessions` | Create product-guide chat session (public L1) |
+| `POST /v1/guide/sessions/{id}/messages` | Non-streaming guide reply |
+| `POST /v1/guide/sessions/{id}/messages/stream` | SSE streaming guide reply (`token` / `done` / `error`) |
+| `GET /v1/guide/sessions/{id}` | Session + message history |
+
+### Product guide chat (public L1)
+
+Functional Q&A for the OwnEdge landing page (`/{locale}/support`). Uses a **sealed knowledge pack** under `knowledge/product-guide/` — **no code worktrees**, no diagnostic bundles, no stack-name leakage (Hugging Face is allowed). Limits are env-driven:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `GUIDE_AI_ADAPTER` | `cli` | **`cli`** = real generative AI (Grok subprocess); **`stub`** = keyword rules for unit tests only |
+| `GUIDE_AI_CLI_COMMAND` | `scripts/ai_guide_grok.sh` | Guide CLI wrapper |
+| `GUIDE_AI_CLI_TIMEOUT_SEC` | `120` | CLI timeout |
+| `GUIDE_KNOWLEDGE_ROOT` | `knowledge/product-guide` | Product markdown pack |
+| `GUIDE_PROMPT_PATH` | `prompts/product-guide.txt` | Guide system prompt |
+| `GUIDE_MAX_MESSAGE_CHARS` | `2000` | Max user message length |
+| `GUIDE_MAX_HISTORY_TURNS` | `12` | History window for the model |
+| `GUIDE_SESSION_TTL_HOURS` | `24` | Session lifetime |
+| `GUIDE_MAX_MESSAGES_PER_SESSION` | `40` | Cap messages per session |
+| `GUIDE_RATE_LIMIT_PER_HOUR` | `20` | Per client IP (hour window) |
+| `GUIDE_STREAM_CHUNK_CHARS` | `48` | SSE chunk size after CLI completion |
+| `GUIDE_SERVICE_TOKEN` | — | Optional shared secret (`X-Guide-Token` / Bearer) |
+| `GUIDE_REQUIRE_TOKEN` | `false` | Require token even if empty (misconfig-safe) |
+| `GUIDE_ARTIFACT_ROOT` | `/data/guide` | Per-session CLI artifacts |
+
+Storefront BFF: `POST /api/guide/chat` and `POST /api/guide/chat/stream` with `SUPPORT_SERVICE_URL` (+ optional `GUIDE_SERVICE_TOKEN`).
 
 ## Vendor workflow (Phase 4)
 

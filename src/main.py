@@ -9,6 +9,8 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
 from .entitlement import check_entitlement
+from .guide.routes import router as guide_router
+from .guide.sessions import init_guide_db
 from .jobs.diagnose import run_diagnosis
 from .redact import contains_secrets, scrub_dict
 from .schemas import (
@@ -30,11 +32,13 @@ _ticket_counts: dict[str, list[float]] = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await tickets.init_db()
+    await init_guide_db()
     logger.info("Appliance support service started")
     yield
 
 
 app = FastAPI(title="Appliance Support", version="1.0.0", lifespan=lifespan)
+app.include_router(guide_router)
 
 
 @app.get("/health")

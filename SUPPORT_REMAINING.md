@@ -8,12 +8,12 @@ Tracks what is still open before AI-assisted support is production-ready and ful
 
 | Repo | Role |
 |------|------|
-| This repo (`appliance-support`) | Hosted API, entitlement, tickets, AI CLI, code context |
+| This repo (`appliance-support`) | Hosted API, entitlement, tickets, AI CLI, code context, product guide |
 | `appliance-console` | Support UI, bundle assembly, outbound push |
-| `inferedge-phase1` (ownedge monorepo) | Controller diagnostics + version stamps |
-| `nocloud` | Billing/subscription DB, `aiAssistedSupport` product |
+| `inferedge-phase1` (ownedge monorepo) | Controller diagnostics + version stamps + compose wiring |
+| `nocloud` | Billing/subscription DB, storefront guide BFF, `aiAssistedSupport` product |
 
-**Last updated:** 2026-07-09
+**Last updated:** 2026-07-12
 
 ---
 
@@ -26,7 +26,7 @@ Tracks what is still open before AI-assisted support is production-ready and ful
 - Controller `GET /support/diagnostics` and `version` on `GET /health`
 - AI **stub** adapter + generic **subprocess CLI** adapter
 - Diagnosis timeout/retry, optional GitHub issues + webhooks
-- Per-repo unit tests
+- Per-repo unit tests; cross-repo support polling limits contract
 
 ### Code context isolation (§3)
 
@@ -37,6 +37,7 @@ Tracks what is still open before AI-assisted support is production-ready and ful
 - Strict refs: SHA or tag only; `dev`/`unknown`/`mock` → ticket failed + email `support@ownedge.ai`
 - Env: `CODE_ROOT_APPLIANCE_CONSOLE`, `CODE_ROOT_APPLIANCE_BACKEND`, `CODE_WORKTREE_ROOT`
 - Optional `SUPPORT_KEEP_TICKET_WORKTREES` to retain trees for investigation
+- Docker: `safe.directory` + persistent worktree path mounts
 
 ### Version stamping (console + backend)
 
@@ -52,33 +53,60 @@ Tracks what is still open before AI-assisted support is production-ready and ful
 - **Default tool: Grok** — `scripts/ai_diagnose_grok.sh`
 - Placeholders: `{prompt_file}`, `{bundle_file}`, `{code_root}`, `{code_roots}`, `{ticket_id}`
 - Primary CWD = backend worktree (`AI_CLI_PRIMARY_ROOT=backend`); prompt requires investigating **both** console and backend
-- Docker: mount `~/.grok` → `/root/.grok` (`GROK_HOME`); `PATH` includes `/root/.grok/bin` (host: `grok login`)
+- Docker: mount `~/.grok` → `/root/.grok` (`GROK_HOME`); robust diagnosis JSON extraction
+- Console poll window aligned with diagnosis timeout/retry contract (~6m)
+
+### Appliance stack wiring
+
+- `inferedge-phase1/compose.yml` passes `SUPPORT_SERVICE_URL` and `SUPPORT_ENABLED` (default true) into the console container
+- `.env.example` documents enablement (`SUPPORT_SERVICE_URL=https://support.ownedge.ai`)
 
 ### Billing adapter (code present)
 
 - `BILLING_ADAPTER=postgres` + `DATABASE_URL` reads nocloud
   `appliances` ⨝ `service_subscriptions` for `service_key = 'aiAssistedSupport'`
+- nocloud entitlement DB schema + Stripe sync can provision the row
 - Default remains `stub` until prod wiring
+
+### Product guide chat (landing L1) — implemented
+
+Public multi-turn guide via:
+
+- Support service: `POST /v1/guide/sessions`, `.../messages`, `.../messages/stream` (SSE), `GET .../sessions/{id}`
+- Sealed knowledge pack under `knowledge/product-guide/` (no code worktrees)
+- Grok CLI wrapper `scripts/ai_guide_grok.sh`; compose default `GUIDE_AI_ADAPTER=cli`
+- Storefront (nocloud): `/{locale}/support` + BFF `/api/guide/chat` and `/api/guide/chat/stream`
+- Unit tests for guide API, stub heuristics, stream parse helpers
+
+**Remaining for guide is ops only** (see §7b).
 
 ---
 
-## 1. Billing and entitlement (blocking for paid service)
+## 1. Billing and entitlement (blocking for production entitlement gate)
+
+**Product packaging (decided):**
+
+| Service key | Level | Scope | Commercial |
+|-------------|-------|--------|------------|
+| `aiAssistedSupport` | **L2** — AI-assisted diagnostics (this service) | Per-customer | Paid product; **$0 for now** (charge later) |
+| `prioritySupport` (name may change) | **L3** — human/priority support | Per-customer | Paid product; **$0 for now** (charge later) |
+
+L1 public product guide (landing chat) remains free and unentitled.
 
 | Item | Notes |
 |------|--------|
-| Production wiring | Point support at billing DB (`BILLING_ADAPTER=postgres`, `DATABASE_URL`); document in compose/ops. Default is still `stub`. |
-| Subscription lifecycle | `aiAssistedSupport` is **internal-only** in nocloud (`INTERNAL_SERVICE_KEYS`) — not on landing/checkout (storefront sells `prioritySupport`). Stripe sync can write the row if metadata carries the key. Need customer-facing buy path and clear entitled/not entitled UX. |
+| Production wiring | Point support at billing DB (`BILLING_ADAPTER=postgres`, `DATABASE_URL`); document in compose/ops. Default is still `stub`. Gate tickets on `aiAssistedSupport` only (not L3). |
+| Subscription lifecycle | Both L2 and L3 are per-customer services. Today `aiAssistedSupport` is still **internal-only** in nocloud (`INTERNAL_SERVICE_KEYS`); storefront surfaces L3-style priority support. Need: provision L2 (and L3) as free-of-charge paid SKUs, customer-facing enablement path, and clear entitled/not entitled UX on the appliance Support page. Stripe/metadata can already write rows when the service key is present. |
 | Schema / ownership | Schema exists in nocloud (`customers`, `appliances`, `service_subscriptions`). TBD: shared Postgres vs read replica for support service. |
 
 ---
 
-## 2. Production deployment and appliance integration
+## 2. Production deployment
 
 | Item | Notes |
 |------|--------|
-| Host support service | Not deployed to a production URL (e.g. `support.ownedge.ai`). Local `docker compose` only. |
-| Unified stack wiring | Appliance compose does not set `SUPPORT_SERVICE_URL` / `SUPPORT_ENABLED` on the console container. |
-| Docs | Root / console docs should describe support enablement end-to-end. |
+| Host support service | Not deployed to a production URL (e.g. `support.ownedge.ai`). Local `docker compose` + storefront → `127.0.0.1:8090` only. |
+| Docs | End-to-end enablement (appliance + support host + billing) for ops runbooks. |
 | Production datastore | Tickets still SQLite; production may need Postgres + backup policy. |
 | TLS | Console → support must use HTTPS in production. |
 | Retention purge | List API filters to 30 days; **old tickets/bundles are not deleted**. Need cleanup job/TTL. |
@@ -137,17 +165,27 @@ For distributed clusters, head console should fan out diagnostics and attach per
 
 | Item | Notes |
 |------|--------|
-| Ticket poll binding | Optional: require `appliance_id` match on poll (today `ticket_id` is capability token) |
-| Authenticated diagnostics | `GET /support/diagnostics` is public like `/status` |
+| Ticket poll binding | **P0:** require `appliance_id` match (or entitlement) on `GET /v1/tickets/{id}` — today `ticket_id` is a capability token |
+| Durable rate limits | In-memory counters for tickets + guide; replace before multi-instance deploy |
+| Authenticated diagnostics | `GET /support/diagnostics` is public like `/status` (optional, policy-driven) |
 | Webhook / GitHub / SMTP secrets | Document rotation and least privilege |
 
 ---
 
 ## 7. Explicitly deferred
 
-- Multi-turn support chat in the console
+- Multi-turn **diagnostic** support chat in the console (distinct from public product guide)
 - Email/push to appliance admins (ops webhook/email alerts exist for failures)
 - Per-appliance API tokens on device
+
+## 7b. Product guide chat — ops remaining
+
+Code is in place. Remaining:
+
+- [ ] Prod Grok smoke (`GUIDE_AI_ADAPTER=cli`, real knowledge answers)
+- [ ] Set `GUIDE_SERVICE_TOKEN` on support + storefront; enable `GUIDE_REQUIRE_TOKEN` if locking down
+- [ ] Tune rate limits via env for production traffic
+- [ ] Ship storefront guide UI/BFF (nocloud) with support service version
 
 ---
 
@@ -163,19 +201,24 @@ For distributed clusters, head console should fan out diagnostics and attach per
 
 ## Suggested implementation order
 
-1. **Ops smoke:** stamped appliance → worktrees → `AI_CLI_ADAPTER=cli` (Grok) → diagnosis  
-2. **Billing prod path:** postgres adapter + sell/provision `aiAssistedSupport`  
-3. **Deploy + compose wiring + TLS + retention purge**  
-4. **Multi-node diagnostics (§5b)**  
-5. **E2E script + diagnostics polish (§5) + security (§6)**  
+1. **Ship guide** — commit storefront side + prod Grok smoke + optional token  
+2. **Ops smoke (diagnose):** stamped appliance → worktrees → `AI_CLI_ADAPTER=cli` (Grok) → diagnosis  
+3. **Security P0:** ticket poll binding + durable rate limiter  
+4. **Billing prod path:** postgres adapter + provision L2 `aiAssistedSupport` (and L3) as $0 paid per-customer SKUs  
+5. **Deploy + TLS + retention purge**  
+6. **Multi-node diagnostics (§5b)** + `controller_logs_tail`  
+7. **E2E script + diagnostics polish (§5)**  
 
 ---
 
 ## Open decisions
 
-- Billing DB access for support (shared vs replica) and product packaging for `aiAssistedSupport`
-- Ticket poll must verify `appliance_id`?
+- Billing DB access for support (shared vs replica)
+- How customers enable L2/L3 while free (auto-grant on hardware delivery vs opt-in catalog vs admin flag) — charge later without re-keying
+- Final public name for L3 (`prioritySupport` provisional)
+- Ticket poll must verify `appliance_id`? (**recommend yes**)
 - Full bundle retention vs hashed summary after diagnosis
 - Default IP masking policy
 - Multi-node: head-only aggregation vs worker-initiated; max nodes; offline node behaviour
 - Worktree pool size vs clone cost at scale
+- Ticket store: stay on SQLite vs move to Postgres with support service HA

@@ -356,6 +356,18 @@ First concrete `AICliAdapter`, job timeout/retry, tuned prompt for bug vs operat
 
 Console ticket history per `appliance_id`; optional GitHub issue for high-confidence bugs; notification hooks.
 
+### Product guide chat (public L1)
+
+Separate from diagnostic tickets: a **public multi-turn product guide** for the nocloud landing (`/{locale}/support`).
+
+- **API:** `POST /v1/guide/sessions`, `POST .../messages`, `POST .../messages/stream` (SSE), `GET .../sessions/{id}`
+- **Knowledge:** sealed markdown under `knowledge/product-guide/` covering console features (Overview, Models, Orchestration, Nodes, Storage, System, Support, Configuration), AI chat workspace, document knowledge, connectors, training, tiers, privacy
+- **No code worktrees** (prevents tech leakage). Hugging Face may be named (customer accounts). Forbidden: OpenWebUI, MCP, RAG stacks, vLLM, Ray, LiteLLM, etc.
+- **Limits:** all via env (`GUIDE_MAX_MESSAGE_CHARS`, `GUIDE_RATE_LIMIT_PER_HOUR`, …)
+- **Streaming:** SSE events `token` / `done` / `error` (CLI may complete fully then chunk for progressive UI)
+- **Auth:** optional `GUIDE_SERVICE_TOKEN` for BFF-only access
+- **Non-goal:** multi-turn *diagnostic* chat inside appliance-console remains deferred
+
 ---
 
 ## Testing strategy

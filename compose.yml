@@ -30,6 +30,25 @@ services:
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
       - SMTP_FROM=${SMTP_FROM:-noreply@ownedge.ai}
+      # Product guide chat (public L1) — real generative AI via CLI (same Grok mount as diagnose).
+      # stub = keyword fallback for CI only; production must use cli.
+      - GUIDE_AI_ADAPTER=${GUIDE_AI_ADAPTER:-cli}
+      - GUIDE_AI_CLI_COMMAND=${GUIDE_AI_CLI_COMMAND:-/app/scripts/ai_guide_grok.sh}
+      - GUIDE_AI_CLI_USE_PROMPT_FILE=${GUIDE_AI_CLI_USE_PROMPT_FILE:-true}
+      - GUIDE_AI_CLI_TIMEOUT_SEC=${GUIDE_AI_CLI_TIMEOUT_SEC:-180}
+      - GUIDE_KNOWLEDGE_ROOT=${GUIDE_KNOWLEDGE_ROOT:-/app/knowledge/product-guide}
+      - GUIDE_PROMPT_PATH=${GUIDE_PROMPT_PATH:-/app/prompts/product-guide.txt}
+      - GUIDE_MAX_MESSAGE_CHARS=${GUIDE_MAX_MESSAGE_CHARS:-2000}
+      - GUIDE_MAX_HISTORY_TURNS=${GUIDE_MAX_HISTORY_TURNS:-12}
+      - GUIDE_SESSION_TTL_HOURS=${GUIDE_SESSION_TTL_HOURS:-24}
+      - GUIDE_MAX_MESSAGES_PER_SESSION=${GUIDE_MAX_MESSAGES_PER_SESSION:-40}
+      - GUIDE_RATE_LIMIT_PER_HOUR=${GUIDE_RATE_LIMIT_PER_HOUR:-20}
+      - GUIDE_STREAM_CHUNK_CHARS=${GUIDE_STREAM_CHUNK_CHARS:-48}
+      - GUIDE_NATIVE_STREAM=${GUIDE_NATIVE_STREAM:-true}
+      - GROK_BIN=${GROK_BIN:-grok}
+      - GUIDE_SERVICE_TOKEN=${GUIDE_SERVICE_TOKEN:-}
+      - GUIDE_REQUIRE_TOKEN=${GUIDE_REQUIRE_TOKEN:-false}
+      - GUIDE_ARTIFACT_ROOT=${GUIDE_ARTIFACT_ROOT:-/data/guide}
     volumes:
       - support_data:/data
       # Grok auth + binary (login on host: grok login → ~/.grok/auth.json)
