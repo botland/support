@@ -1,15 +1,34 @@
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: support
+      POSTGRES_PASSWORD: support
+      POSTGRES_DB: support
+    ports:
+      - "${SUPPORT_DB_PORT:-5433}:5432"
+    volumes:
+      - support_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U support -d support"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
   support:
     build: .
     ports:
       - "${SUPPORT_PORT:-8090}:8090"
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
       - SUPPORT_PORT=8090
-      - SUPPORT_DB_PATH=/data/support.db
+      - SUPPORT_DATABASE_URL=postgresql://support:support@db:5432/support
+      # CODE_WORKTREE_ROOT stays on volume (not derived from SQLite path)
       - SUPPORT_FREE_FOR_ALL=true
       - HOME=/root
       - PATH=/root/.grok/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-      # AI CLI: stub by default; set AI_CLI_ADAPTER=cli + mount ~/.grok for Grok.
       - AI_CLI_ADAPTER=${AI_CLI_ADAPTER:-stub}
       - AI_CLI_COMMAND=${AI_CLI_COMMAND:-/app/scripts/ai_diagnose_grok.sh}
       - AI_CLI_USE_PROMPT_FILE=${AI_CLI_USE_PROMPT_FILE:-true}
@@ -30,8 +49,6 @@ services:
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
       - SMTP_FROM=${SMTP_FROM:-noreply@ownedge.ai}
-      # Product guide chat (public L1) — real generative AI via CLI (same Grok mount as diagnose).
-      # stub = keyword fallback for CI only; production must use cli.
       - GUIDE_AI_ADAPTER=${GUIDE_AI_ADAPTER:-cli}
       - GUIDE_AI_CLI_COMMAND=${GUIDE_AI_CLI_COMMAND:-/app/scripts/ai_guide_grok.sh}
       - GUIDE_AI_CLI_USE_PROMPT_FILE=${GUIDE_AI_CLI_USE_PROMPT_FILE:-true}
@@ -49,14 +66,15 @@ services:
       - GUIDE_SERVICE_TOKEN=${GUIDE_SERVICE_TOKEN:-}
       - GUIDE_REQUIRE_TOKEN=${GUIDE_REQUIRE_TOKEN:-false}
       - GUIDE_ARTIFACT_ROOT=${GUIDE_ARTIFACT_ROOT:-/data/guide}
+      # Entitlement read (prod): point at nocloud commercial DB
+      - BILLING_ADAPTER=${BILLING_ADAPTER:-stub}
+      - DATABASE_URL=${ENTITLEMENT_DATABASE_URL:-}
     volumes:
       - support_data:/data
-      # Grok auth + binary (login on host: grok login → ~/.grok/auth.json)
       - ${GROK_HOME:-${HOME}/.grok}:/root/.grok
-      # Product source clones (required for code context). Paths must match CODE_ROOT_* in .env.
-      # .git must be writable inside the container for git worktree registration.
       - ${CODE_ROOT_APPLIANCE_CONSOLE}:${CODE_ROOT_APPLIANCE_CONSOLE}
       - ${CODE_ROOT_APPLIANCE_BACKEND}:${CODE_ROOT_APPLIANCE_BACKEND}
 
 volumes:
   support_data:
+  support_pg:

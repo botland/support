@@ -84,7 +84,7 @@ Public multi-turn guide via:
 
 ## 1. Billing and entitlement (blocking for production entitlement gate)
 
-**Ownership (decided):** shared Postgres; **nocloud owns** schema, migrations, and all population (checkout / Stripe webhooks / grants). **appliance-support is read-only** (`BILLING_ADAPTER=postgres`). Canonical design: [`nocloud/docs/entitlement-database.md`](../docs/entitlement-database.md).
+**Ownership (decided):** **nocloud owns** commercial schema, migrations, and population (checkout / webhooks / grants). **appliance-support** has **its own Postgres** for tickets/guide (`SUPPORT_DATABASE_URL`); entitlement is **read-only** via `ENTITLEMENT_DATABASE_URL` + `BILLING_ADAPTER=postgres`. Canonical: [`DATABASE_PLAN.md`](../DATABASE_PLAN.md).
 
 **Product packaging (decided):**
 

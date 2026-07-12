@@ -1,88 +1,74 @@
 from __future__ import annotations
 
-import os
 import uuid
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
-import aiosqlite
-
+from .. import db
 from .settings import guide_settings
 
-# Share the support DB file by default (separate tables).
-DB_PATH = Path(os.environ.get("SUPPORT_DB_PATH", "/data/support.db"))
+_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS guide_sessions (
+  id TEXT PRIMARY KEY,
+  locale TEXT NOT NULL DEFAULT 'en',
+  created_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
+CREATE TABLE IF NOT EXISTS guide_messages (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES guide_sessions(id) ON DELETE CASCADE,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_guide_messages_session
+  ON guide_messages(session_id, created_at);
+"""
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _now_iso() -> str:
-    return _now().isoformat()
+def _iso(dt: datetime | str) -> str:
+    if hasattr(dt, "isoformat"):
+        return dt.isoformat()
+    return str(dt)
 
 
 async def init_guide_db() -> None:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS guide_sessions (
-                id TEXT PRIMARY KEY,
-                locale TEXT NOT NULL DEFAULT 'en',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )
-            """
-        )
-        await db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS guide_messages (
-                id TEXT PRIMARY KEY,
-                session_id TEXT NOT NULL,
-                role TEXT NOT NULL,
-                content TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (session_id) REFERENCES guide_sessions(id)
-            )
-            """
-        )
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_guide_messages_session "
-            "ON guide_messages(session_id, created_at)"
-        )
-        await db.commit()
+    pool = await db.get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(_SCHEMA_SQL)
 
 
 async def create_session(locale: str = "en") -> dict:
     session_id = str(uuid.uuid4())
-    now = _now_iso()
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            """
-            INSERT INTO guide_sessions (id, locale, created_at, updated_at)
-            VALUES (?, ?, ?, ?)
-            """,
-            (session_id, locale or "en", now, now),
-        )
-        await db.commit()
-    return {"session_id": session_id, "created_at": now, "locale": locale or "en"}
+    now = _now()
+    await db.execute(
+        """
+        INSERT INTO guide_sessions (id, locale, created_at, updated_at)
+        VALUES ($1, $2, $3, $4)
+        """,
+        session_id,
+        locale or "en",
+        now,
+        now,
+    )
+    return {"session_id": session_id, "created_at": _iso(now), "locale": locale or "en"}
 
 
 async def get_session(session_id: str) -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT id, locale, created_at, updated_at FROM guide_sessions WHERE id = ?",
-            (session_id,),
-        ) as cursor:
-            row = await cursor.fetchone()
+    row = await db.fetchrow(
+        "SELECT id, locale, created_at, updated_at FROM guide_sessions WHERE id = $1",
+        session_id,
+    )
     if row is None:
         return None
     return {
         "session_id": row["id"],
         "locale": row["locale"],
-        "created_at": row["created_at"],
-        "updated_at": row["updated_at"],
+        "created_at": _iso(row["created_at"]),
+        "updated_at": _iso(row["updated_at"]),
     }
 
 
@@ -107,62 +93,60 @@ async def ensure_session_active(session_id: str) -> dict | None:
 
 
 async def count_messages(session_id: str) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT COUNT(*) FROM guide_messages WHERE session_id = ?",
-            (session_id,),
-        ) as cursor:
-            row = await cursor.fetchone()
-    return int(row[0]) if row else 0
+    val = await db.fetchval(
+        "SELECT COUNT(*) FROM guide_messages WHERE session_id = $1",
+        session_id,
+    )
+    return int(val or 0)
 
 
 async def add_message(session_id: str, role: str, content: str) -> dict:
     message_id = str(uuid.uuid4())
-    now = _now_iso()
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            """
-            INSERT INTO guide_messages (id, session_id, role, content, created_at)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (message_id, session_id, role, content, now),
-        )
-        await db.execute(
-            "UPDATE guide_sessions SET updated_at = ? WHERE id = ?",
-            (now, session_id),
-        )
-        await db.commit()
+    now = _now()
+    await db.execute(
+        """
+        INSERT INTO guide_messages (id, session_id, role, content, created_at)
+        VALUES ($1, $2, $3, $4, $5)
+        """,
+        message_id,
+        session_id,
+        role,
+        content,
+        now,
+    )
+    await db.execute(
+        "UPDATE guide_sessions SET updated_at = $1 WHERE id = $2",
+        now,
+        session_id,
+    )
     return {
         "message_id": message_id,
         "session_id": session_id,
         "role": role,
         "content": content,
-        "created_at": now,
+        "created_at": _iso(now),
     }
 
 
 async def list_messages(session_id: str, *, limit: int | None = None) -> list[dict]:
     if limit is None:
         limit = guide_settings()["max_history_turns"] * 2
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            """
-            SELECT id, session_id, role, content, created_at
-            FROM guide_messages
-            WHERE session_id = ?
-            ORDER BY created_at ASC
-            """,
-            (session_id,),
-        ) as cursor:
-            rows = await cursor.fetchall()
+    rows = await db.fetch(
+        """
+        SELECT id, session_id, role, content, created_at
+        FROM guide_messages
+        WHERE session_id = $1
+        ORDER BY created_at ASC
+        """,
+        session_id,
+    )
     messages = [
         {
             "message_id": row["id"],
             "session_id": row["session_id"],
             "role": row["role"],
             "content": row["content"],
-            "created_at": row["created_at"],
+            "created_at": _iso(row["created_at"]),
         }
         for row in rows
     ]

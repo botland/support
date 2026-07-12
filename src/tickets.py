@@ -4,100 +4,87 @@ import json
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
-import aiosqlite
-
+from . import db
 from .schemas import DiagnosisResult, DiagnosticBundle, TicketStatusResponse, TicketSummary
 
-DB_PATH = Path(os.environ.get("SUPPORT_DB_PATH", "/data/support.db"))
 RETENTION_DAYS = int(os.environ.get("SUPPORT_TICKET_RETENTION_DAYS", "30"))
 LIST_LIMIT = int(os.environ.get("SUPPORT_TICKET_LIST_LIMIT", "20"))
 
+_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS tickets (
+  id TEXT PRIMARY KEY,
+  appliance_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  bundle_json TEXT NOT NULL,
+  diagnosis_json TEXT,
+  error TEXT,
+  github_issue_url TEXT,
+  created_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tickets_appliance ON tickets(appliance_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_created ON tickets(created_at);
+"""
+
 
 async def init_db() -> None:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS tickets (
-                id TEXT PRIMARY KEY,
-                appliance_id TEXT NOT NULL,
-                status TEXT NOT NULL,
-                bundle_json TEXT NOT NULL,
-                diagnosis_json TEXT,
-                error TEXT,
-                github_issue_url TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )
-            """
-        )
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_tickets_appliance ON tickets(appliance_id)"
-        )
-        await _migrate_columns(db)
-        await db.commit()
+    pool = await db.get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(_SCHEMA_SQL)
 
 
-async def _migrate_columns(db: aiosqlite.Connection) -> None:
-    async with db.execute("PRAGMA table_info(tickets)") as cursor:
-        rows = await cursor.fetchall()
-    columns = {row[1] for row in rows}
-    if "github_issue_url" not in columns:
-        await db.execute("ALTER TABLE tickets ADD COLUMN github_issue_url TEXT")
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _retention_cutoff() -> str:
-    cutoff = datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
-    return cutoff.isoformat()
+def _retention_cutoff() -> datetime:
+    return _now() - timedelta(days=RETENTION_DAYS)
 
 
 async def create_ticket(bundle: DiagnosticBundle) -> str:
     ticket_id = str(uuid.uuid4())
     now = _now()
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            """
-            INSERT INTO tickets (id, appliance_id, status, bundle_json, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (ticket_id, bundle.appliance_id, "queued", bundle.model_dump_json(), now, now),
-        )
-        await db.commit()
+    await db.execute(
+        """
+        INSERT INTO tickets (id, appliance_id, status, bundle_json, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        """,
+        ticket_id,
+        bundle.appliance_id,
+        "queued",
+        bundle.model_dump_json(),
+        now,
+        now,
+    )
     return ticket_id
 
 
-def _row_to_status(row: aiosqlite.Row) -> TicketStatusResponse:
+def _row_to_status(row) -> TicketStatusResponse:
     diagnosis = None
     if row["diagnosis_json"]:
         diagnosis = DiagnosisResult.model_validate(json.loads(row["diagnosis_json"]))
+    created = row["created_at"]
+    updated = row["updated_at"]
     return TicketStatusResponse(
         ticket_id=row["id"],
         status=row["status"],
         diagnosis=diagnosis,
         error=row["error"],
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
+        created_at=created.isoformat() if hasattr(created, "isoformat") else created,
+        updated_at=updated.isoformat() if hasattr(updated, "isoformat") else updated,
         github_issue_url=row["github_issue_url"],
     )
 
 
 async def get_ticket(ticket_id: str) -> TicketStatusResponse | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            """
-            SELECT id, status, diagnosis_json, error, github_issue_url, created_at, updated_at
-            FROM tickets WHERE id = ?
-            """,
-            (ticket_id,),
-        ) as cursor:
-            row = await cursor.fetchone()
+    row = await db.fetchrow(
+        """
+        SELECT id, status, diagnosis_json, error, github_issue_url, created_at, updated_at
+        FROM tickets WHERE id = $1
+        """,
+        ticket_id,
+    )
     if row is None:
         return None
     return _row_to_status(row)
@@ -106,19 +93,18 @@ async def get_ticket(ticket_id: str) -> TicketStatusResponse | None:
 async def list_tickets_for_appliance(appliance_id: str, *, limit: int | None = None) -> list[TicketSummary]:
     max_items = limit or LIST_LIMIT
     cutoff = _retention_cutoff()
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            """
-            SELECT id, status, diagnosis_json, github_issue_url, created_at, updated_at
-            FROM tickets
-            WHERE appliance_id = ? AND created_at >= ?
-            ORDER BY created_at DESC
-            LIMIT ?
-            """,
-            (appliance_id, cutoff, max_items),
-        ) as cursor:
-            rows = await cursor.fetchall()
+    rows = await db.fetch(
+        """
+        SELECT id, status, diagnosis_json, github_issue_url, created_at, updated_at
+        FROM tickets
+        WHERE appliance_id = $1 AND created_at >= $2
+        ORDER BY created_at DESC
+        LIMIT $3
+        """,
+        appliance_id,
+        cutoff,
+        max_items,
+    )
 
     summaries: list[TicketSummary] = []
     for row in rows:
@@ -130,12 +116,14 @@ async def list_tickets_for_appliance(appliance_id: str, *, limit: int | None = N
             verdict = diagnosis.verdict
             summary = diagnosis.summary
             confidence = diagnosis.confidence
+        created = row["created_at"]
+        updated = row["updated_at"]
         summaries.append(
             TicketSummary(
                 ticket_id=row["id"],
                 status=row["status"],
-                created_at=row["created_at"],
-                updated_at=row["updated_at"],
+                created_at=created.isoformat() if hasattr(created, "isoformat") else str(created),
+                updated_at=updated.isoformat() if hasattr(updated, "isoformat") else str(updated),
                 verdict=verdict,
                 summary=summary,
                 confidence=confidence,
@@ -154,36 +142,32 @@ async def update_ticket_status(
 ) -> None:
     now = _now()
     diagnosis_json = diagnosis.model_dump_json() if diagnosis else None
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            """
-            UPDATE tickets
-            SET status = ?, diagnosis_json = ?, error = ?, updated_at = ?
-            WHERE id = ?
-            """,
-            (status, diagnosis_json, error, now, ticket_id),
-        )
-        await db.commit()
+    await db.execute(
+        """
+        UPDATE tickets
+        SET status = $1, diagnosis_json = $2, error = $3, updated_at = $4
+        WHERE id = $5
+        """,
+        status,
+        diagnosis_json,
+        error,
+        now,
+        ticket_id,
+    )
 
 
 async def set_github_issue_url(ticket_id: str, url: str) -> None:
     now = _now()
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE tickets SET github_issue_url = ?, updated_at = ? WHERE id = ?",
-            (url, now, ticket_id),
-        )
-        await db.commit()
+    await db.execute(
+        "UPDATE tickets SET github_issue_url = $1, updated_at = $2 WHERE id = $3",
+        url,
+        now,
+        ticket_id,
+    )
 
 
 async def load_bundle(ticket_id: str) -> DiagnosticBundle | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT bundle_json FROM tickets WHERE id = ?",
-            (ticket_id,),
-        ) as cursor:
-            row = await cursor.fetchone()
+    row = await db.fetchrow("SELECT bundle_json FROM tickets WHERE id = $1", ticket_id)
     if row is None:
         return None
     return DiagnosticBundle.model_validate(json.loads(row["bundle_json"]))

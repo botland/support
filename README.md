@@ -23,7 +23,9 @@ docker compose up --build
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `SUPPORT_PORT` | `8090` | HTTP listen port |
-| `SUPPORT_DB_PATH` | `/data/support.db` | Ticket store |
+| `SUPPORT_DATABASE_URL` | — (required) | Postgres DSN for tickets + guide (own DB) |
+| `SUPPORT_DATA_DIR` | `/data` | Worktree/artifact parent when `CODE_WORKTREE_ROOT` unset |
+| `ENTITLEMENT_DATABASE_URL` / `DATABASE_URL` | — | Nocloud commercial DB read for `BILLING_ADAPTER=postgres` |
 | `SUPPORT_FREE_FOR_ALL` | `true` | Stub entitlement: allow all appliances |
 | `SUPPORT_DENIED_APPLIANCE_IDS` | — | Comma-separated deny list (stub billing) |
 | `SUPPORT_ENTITLED_APPLIANCE_IDS` | — | Comma-separated allow list (when set, only these pass) |

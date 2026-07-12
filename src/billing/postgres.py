@@ -15,14 +15,20 @@ class PostgresBillingAdapter:
     """Reads entitlement from the shared nocloud Postgres database."""
 
     def __init__(self) -> None:
-        self.database_url = os.environ.get("DATABASE_URL", "")
+        # Prefer ENTITLEMENT_DATABASE_URL so support app DB stays separate.
+        self.database_url = (
+            os.environ.get("ENTITLEMENT_DATABASE_URL", "").strip()
+            or os.environ.get("DATABASE_URL", "").strip()
+        )
         self._pool: asyncpg.Pool | None = None
 
     async def _get_pool(self) -> asyncpg.Pool:
         if asyncpg is None:
             raise RuntimeError("asyncpg is required when BILLING_ADAPTER=postgres")
         if not self.database_url:
-            raise RuntimeError("DATABASE_URL is required when BILLING_ADAPTER=postgres")
+            raise RuntimeError(
+                "ENTITLEMENT_DATABASE_URL (or DATABASE_URL) is required when BILLING_ADAPTER=postgres"
+            )
         if self._pool is None:
             self._pool = await asyncpg.create_pool(self.database_url, min_size=1, max_size=4)
         return self._pool

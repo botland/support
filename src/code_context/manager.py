@@ -37,7 +37,7 @@ def _worktree_root() -> Path:
     raw = os.environ.get("CODE_WORKTREE_ROOT", "").strip()
     if raw:
         return Path(raw)
-    return Path(os.environ.get("SUPPORT_DB_PATH", "/data/support.db")).resolve().parent / "code_worktrees"
+    return Path(os.environ.get("SUPPORT_DATA_DIR", "/data")).resolve() / "code_worktrees"
 
 
 def _load_versions() -> dict:
